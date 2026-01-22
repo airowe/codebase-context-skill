@@ -15,6 +15,120 @@ Generate a `.claude/codebase-context.md` file that provides pre-built context fo
 - After significant architectural changes
 - When onboarding new team members who use AI tools
 - When agents are spending too many tokens exploring the codebase
+- When staleness check indicates context is outdated
+
+---
+
+## Staleness Detection
+
+Before reading codebase-context.md, check if it's stale by running:
+
+```bash
+# Check if context needs regeneration
+.claude/check-context-freshness.sh
+```
+
+If the script exits non-zero or prints "STALE", regenerate the context.
+
+### How Staleness Detection Works
+
+When generating context, also create `.claude/codebase-context.snapshot` containing:
+- Directory tree hash (top 3 levels)
+- Key config file checksums (package.json, tsconfig.json, etc.)
+- Generation timestamp
+
+The freshness check compares current state against the snapshot.
+
+### Generate the Freshness Check Script
+
+After generating codebase-context.md, create `.claude/check-context-freshness.sh`:
+
+```bash
+#!/bin/bash
+# Check if codebase-context.md needs regeneration
+
+SNAPSHOT_FILE=".claude/codebase-context.snapshot"
+CONTEXT_FILE=".claude/codebase-context.md"
+
+# If no context file exists, it's stale
+if [ ! -f "$CONTEXT_FILE" ]; then
+    echo "STALE: No context file found"
+    exit 1
+fi
+
+# If no snapshot exists, assume stale
+if [ ! -f "$SNAPSHOT_FILE" ]; then
+    echo "STALE: No snapshot file found"
+    exit 1
+fi
+
+# Get current directory structure hash (top 3 levels, dirs only)
+CURRENT_TREE=$(find . -maxdepth 3 -type d -not -path '*/\.*' -not -path './node_modules*' -not -path './dist*' -not -path './build*' -not -path './.next*' 2>/dev/null | sort | md5sum | cut -d' ' -f1)
+
+# Get stored tree hash
+STORED_TREE=$(grep "^tree:" "$SNAPSHOT_FILE" 2>/dev/null | cut -d' ' -f2)
+
+if [ "$CURRENT_TREE" != "$STORED_TREE" ]; then
+    echo "STALE: Directory structure changed"
+    exit 1
+fi
+
+# Check key config files
+for CONFIG in package.json tsconfig.json pyproject.toml Cargo.toml go.mod; do
+    if [ -f "$CONFIG" ]; then
+        CURRENT_HASH=$(md5sum "$CONFIG" 2>/dev/null | cut -d' ' -f1)
+        STORED_HASH=$(grep "^$CONFIG:" "$SNAPSHOT_FILE" 2>/dev/null | cut -d' ' -f2)
+        if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+            echo "STALE: $CONFIG changed"
+            exit 1
+        fi
+    fi
+done
+
+# Check age (warn if older than 7 days)
+GENERATED=$(grep "^generated:" "$SNAPSHOT_FILE" 2>/dev/null | cut -d' ' -f2)
+if [ -n "$GENERATED" ]; then
+    NOW=$(date +%s)
+    AGE=$((NOW - GENERATED))
+    DAYS=$((AGE / 86400))
+    if [ $DAYS -gt 7 ]; then
+        echo "STALE: Context is $DAYS days old (recommend regenerating weekly)"
+        exit 1
+    fi
+fi
+
+echo "FRESH: Context is up to date"
+exit 0
+```
+
+### Generate the Snapshot
+
+After generating codebase-context.md, create `.claude/codebase-context.snapshot`:
+
+```bash
+#!/bin/bash
+# Generate snapshot for freshness detection
+
+SNAPSHOT_FILE=".claude/codebase-context.snapshot"
+
+# Directory tree hash
+TREE_HASH=$(find . -maxdepth 3 -type d -not -path '*/\.*' -not -path './node_modules*' -not -path './dist*' -not -path './build*' -not -path './.next*' 2>/dev/null | sort | md5sum | cut -d' ' -f1)
+
+echo "tree: $TREE_HASH" > "$SNAPSHOT_FILE"
+echo "generated: $(date +%s)" >> "$SNAPSHOT_FILE"
+
+# Hash key config files
+for CONFIG in package.json tsconfig.json pyproject.toml Cargo.toml go.mod; do
+    if [ -f "$CONFIG" ]; then
+        HASH=$(md5sum "$CONFIG" | cut -d' ' -f1)
+        echo "$CONFIG: $HASH" >> "$SNAPSHOT_FILE"
+    fi
+done
+
+echo "Snapshot saved to $SNAPSHOT_FILE"
+```
+
+---
 
 ## Generation Process
 
@@ -92,9 +206,16 @@ Create sections for:
 - Integration patterns
 ```
 
-### Step 3: Place the File
+### Step 3: Save Files
 
-Save to `.claude/codebase-context.md` in the project root.
+Save to the project:
+1. `.claude/codebase-context.md` - The context document
+2. `.claude/codebase-context.snapshot` - Freshness snapshot
+3. `.claude/check-context-freshness.sh` - Freshness check script (make executable)
+
+```bash
+chmod +x .claude/check-context-freshness.sh
+```
 
 ### Step 4: Reference in CLAUDE.md
 
@@ -105,6 +226,8 @@ Add to the project's `CLAUDE.md`:
 
 **Before exploring the codebase, ALWAYS read `.claude/codebase-context.md` first.**
 
+To check if context is stale: `.claude/check-context-freshness.sh`
+
 This file contains pre-built context about:
 - Directory structure and key files
 - Patterns and conventions
@@ -113,28 +236,53 @@ This file contains pre-built context about:
 - Quick commands
 ```
 
+---
+
+## Quick Regeneration
+
+When context is stale, regenerate with:
+
+```
+Generate fresh codebase context for this project
+```
+
+Or use the skill directly:
+```
+/skill codebase-context
+```
+
+---
+
 ## Best Practices
 
-1. **Keep it updated** - Regenerate after major changes
-2. **Be specific** - Include actual file paths, not generic descriptions
-3. **Prioritize** - Put most important info first
-4. **Be concise** - Agents have limited context; don't pad with fluff
-5. **Include gotchas** - Document non-obvious behaviors that waste tokens
+1. **Check freshness first** - Run the check script before trusting the context
+2. **Keep it updated** - Regenerate after major changes
+3. **Be specific** - Include actual file paths, not generic descriptions
+4. **Prioritize** - Put most important info first
+5. **Be concise** - Agents have limited context; don't pad with fluff
+6. **Include gotchas** - Document non-obvious behaviors that waste tokens
+7. **Commit the files** - Version control the context and snapshot
 
 ## Example Output Structure
 
 ```
 .claude/
-├── codebase-context.md    # Generated context file
-└── ...
+├── codebase-context.md           # Generated context file
+├── codebase-context.snapshot     # Freshness snapshot
+└── check-context-freshness.sh    # Freshness check script
 
-CLAUDE.md                   # References codebase-context.md
+CLAUDE.md                          # References codebase-context.md
 ```
 
 ## Maintenance
 
-Re-run this skill when:
-- Adding new major features or directories
+The staleness check will detect when regeneration is needed:
+- Directory structure changes (new folders, reorganization)
+- Config file changes (package.json, tsconfig.json, etc.)
+- Age > 7 days
+
+Manual regeneration triggers:
+- Adding new major features
 - Changing tech stack components
 - Modifying conventions or patterns
 - Noticing agents repeatedly exploring the same areas

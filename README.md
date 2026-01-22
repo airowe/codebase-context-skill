@@ -1,6 +1,6 @@
 # Codebase Context Skill
 
-A Claude Code skill that generates comprehensive context documents for AI agents working on your codebase.
+A Claude Code skill that generates comprehensive context documents for AI agents working on your codebase, with automatic staleness detection.
 
 ## What It Does
 
@@ -14,18 +14,32 @@ This skill creates a `.claude/codebase-context.md` file that provides pre-built 
 - Domain concepts and workflows
 - Gotchas and non-obvious behaviors
 
+## Staleness Detection
+
+The skill includes automatic freshness checking:
+
+```bash
+# Check if context needs regeneration
+.claude/check-context-freshness.sh
+```
+
+The check detects:
+- **Directory structure changes** - New folders, reorganization
+- **Config file changes** - package.json, tsconfig.json, etc.
+- **Age > 7 days** - Recommends weekly regeneration
+
 ## Installation
 
 ### Option 1: Clone to skills directory
 
 ```bash
-git clone https://github.com/anthropics/codebase-context-skill ~/.claude/skills/codebase-context
+git clone https://github.com/airowe/codebase-context-skill ~/.claude/skills/codebase-context
 ```
 
 ### Option 2: Symlink from your preferred location
 
 ```bash
-git clone https://github.com/anthropics/codebase-context-skill ~/path/to/skills/codebase-context
+git clone https://github.com/airowe/codebase-context-skill ~/path/to/skills/codebase-context
 ln -s ~/path/to/skills/codebase-context ~/.claude/skills/codebase-context
 ```
 
@@ -41,6 +55,17 @@ Or reference it directly:
 /skill codebase-context
 ```
 
+## Generated Files
+
+After running the skill, your project will have:
+
+```
+.claude/
+├── codebase-context.md           # The context document
+├── codebase-context.snapshot     # Freshness snapshot (hashes + timestamp)
+└── check-context-freshness.sh    # Freshness check script
+```
+
 ## Example Output
 
 See [examples/codebase-context.md](examples/codebase-context.md) for a sample generated context file.
@@ -53,10 +78,11 @@ See [examples/codebase-context.md](examples/codebase-context.md) for a sample ge
 
 ## Best Practices
 
-1. **Regenerate after major changes** - Keep the context file current
-2. **Reference in CLAUDE.md** - Tell agents to read it first
-3. **Be specific** - Include actual file paths, not generic descriptions
-4. **Include gotchas** - Document non-obvious behaviors
+1. **Check freshness first** - Run the check script before trusting the context
+2. **Regenerate after major changes** - The staleness check will remind you
+3. **Reference in CLAUDE.md** - Tell agents to read it first
+4. **Be specific** - Include actual file paths, not generic descriptions
+5. **Commit all files** - Version control the context, snapshot, and check script
 
 ## Contributing
 

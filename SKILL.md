@@ -300,3 +300,71 @@ Manual regeneration triggers:
 - Changing tech stack components
 - Modifying conventions or patterns
 - Noticing agents repeatedly exploring the same areas
+
+---
+
+## Companion Tools
+
+The codebase-context file provides static, high-level understanding. For deeper dynamic exploration, consider these companion tools:
+
+### grepai - Semantic Code Search
+
+[grepai](https://github.com/yoanbernabeu/grepai) enables natural language code search using vector embeddings. Instead of pattern matching, query by meaning.
+
+**When to use:** After reading codebase-context, when you need to find specific code by what it does rather than what it's named.
+
+**Example queries:**
+```bash
+grepai search "user authentication flow"
+grepai search "database connection handling"
+grepai search "error handling in API routes"
+```
+
+**Call graph tracing:**
+```bash
+grepai trace callers myFunction    # Who calls this function?
+grepai trace callees myFunction    # What does this function call?
+```
+
+**Setup:**
+```bash
+# Install
+curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh
+
+# Initialize in project
+cd your-project && grepai init
+
+# Start file watcher (keeps index fresh)
+grepai watch
+
+# Search
+grepai search "your query"
+```
+
+**MCP Server for Claude Code:**
+```bash
+grepai mcp-serve  # Enables Claude Code to use semantic search directly
+```
+
+**Key features:**
+- 100% local (uses Ollama - no cloud dependencies)
+- Real-time indexing via file watcher
+- Multi-language support (JS, TS, Python, Go, Rust, etc.)
+- JSON output optimized for AI agents
+
+### Claude Context (Alternative)
+
+[claude-context](https://github.com/zilliztech/claude-context) is another MCP plugin for semantic code search, built by Zilliz (creators of Milvus vector DB).
+
+### How They Complement codebase-context
+
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| codebase-context | Static project overview | Session start, understanding structure |
+| grepai | Dynamic semantic search | Finding specific code by meaning |
+| Glob/Grep | Pattern matching | Finding files/text by exact patterns |
+
+**Recommended workflow:**
+1. Read `codebase-context.md` first (understand the project)
+2. Use grepai for semantic queries (find code by meaning)
+3. Fall back to Glob/Grep for exact pattern matches

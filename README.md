@@ -84,6 +84,38 @@ See [examples/codebase-context.md](examples/codebase-context.md) for a sample ge
 4. **Be specific** - Include actual file paths, not generic descriptions
 5. **Commit all files** - Version control the context, snapshot, and check script
 
+## Companion Tools
+
+The codebase-context file provides static, high-level understanding. For deeper dynamic exploration, consider:
+
+### [grepai](https://github.com/yoanbernabeu/grepai) - Semantic Code Search
+
+Search code by meaning, not just text patterns. Query "user authentication flow" instead of grepping for function names.
+
+```bash
+# Install & setup
+curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh
+cd your-project && grepai init && grepai watch
+
+# Search by meaning
+grepai search "error handling in API routes"
+
+# Trace call graphs
+grepai trace callers myFunction
+```
+
+- 100% local (uses Ollama)
+- MCP server for Claude Code integration
+- Real-time indexing
+
+### Recommended Workflow
+
+| Step | Tool | Purpose |
+|------|------|---------|
+| 1 | codebase-context | Understand project structure |
+| 2 | grepai | Find code by semantic meaning |
+| 3 | Glob/Grep | Exact pattern matching |
+
 ## Contributing
 
 PRs welcome! Please follow the existing format and include examples.

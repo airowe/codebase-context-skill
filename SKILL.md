@@ -217,24 +217,38 @@ Save to the project:
 chmod +x .claude/check-context-freshness.sh
 ```
 
-### Step 4: Reference in CLAUDE.md
+### Step 4: Update CLAUDE.md
 
-Add to the project's `CLAUDE.md`:
+Add this block at the **TOP** of the project's `CLAUDE.md` (before any other instructions):
 
 ```markdown
-## IMPORTANT: Read Codebase Context First
+## CRITICAL: Read Codebase Context First
 
-**Before exploring the codebase, ALWAYS read `.claude/codebase-context.md` first.**
+**BEFORE using Glob, Grep, or exploring the codebase, you MUST:**
 
-To check if context is stale: `.claude/check-context-freshness.sh`
+1. Read `.claude/codebase-context.md` - contains pre-built project context
+2. Run `.claude/check-context-freshness.sh` - verify context is current
 
-This file contains pre-built context about:
-- Directory structure and key files
-- Patterns and conventions
-- Database schema
-- Common workflows
-- Quick commands
+**DO NOT** use file search tools (Glob, Grep, Task with Explore agent) until you have read the context file. The context file contains:
+- Complete directory structure with file purposes
+- Key files organized by feature
+- Patterns, conventions, and code style
+- Database schema and domain concepts
+- Quick commands and common gotchas
+
+If the freshness check returns "STALE", regenerate context before proceeding:
 ```
+/skill codebase-context
+```
+
+This saves tokens and ensures accurate understanding of the codebase.
+```
+
+**Why this instruction works:**
+- Placed at the TOP of CLAUDE.md so it's read first
+- Uses "CRITICAL" and "MUST" for priority
+- Explicitly lists the tools to avoid until context is read
+- Explains the benefit (saves tokens, accurate understanding)
 
 ---
 

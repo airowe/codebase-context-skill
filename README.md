@@ -4,15 +4,31 @@ A Claude Code skill that generates comprehensive context documents for AI agents
 
 ## What It Does
 
-This skill creates a `.claude/codebase-context.md` file that provides pre-built context about your project. Instead of agents spending tokens exploring your codebase every session, they can read this context file first and immediately understand:
+This skill creates pre-built context files that help AI agents understand your codebase immediately, without spending tokens on exploration:
 
+| File | Purpose | Format |
+|------|---------|--------|
+| `codebase-context.md` | Human-readable project overview | Markdown |
+| `code-index.json` | Fast lookups for concepts, exports, types | JSON |
+| `deps.mermaid` | Dependency graph for tracing imports | Mermaid |
+
+### codebase-context.md
 - Project structure and architecture
 - Key files organized by feature
 - Naming conventions and code style
-- Database schema
-- Common commands
-- Domain concepts and workflows
-- Gotchas and non-obvious behaviors
+- Database schema and domain concepts
+- Common commands and gotchas
+
+### code-index.json (NEW)
+- **concepts** → file locations (e.g., "authentication" → `src/auth/*.ts`)
+- **entry_points** → API routes/handlers (e.g., `POST /api/login` → `src/routes/auth.ts:15`)
+- **exports** → module public APIs (e.g., `src/utils.ts` → `["formatDate", "debounce"]`)
+- **types** → type definitions (e.g., `User` → `src/types/user.ts:5`)
+
+### deps.mermaid (NEW)
+- Visual dependency graph in Mermaid format
+- Shows which files import which
+- Renders in GitHub, VSCode, and most markdown viewers
 
 ## Staleness Detection
 
@@ -45,6 +61,22 @@ ln -s ~/path/to/skills/codebase-context ~/.claude/skills/codebase-context
 
 ## Usage
 
+### Option 1: Use the extraction scripts (recommended)
+
+Run the extraction scripts to generate machine-readable context files:
+
+```bash
+# Generate all context files at once
+~/.claude/skills/codebase-context/scripts/generate-all.sh .
+
+# Or run individually:
+~/.claude/skills/codebase-context/scripts/generate-code-index.sh .
+~/.claude/skills/codebase-context/scripts/generate-deps.sh . mermaid
+~/.claude/skills/codebase-context/scripts/generate-deps.sh . json
+```
+
+### Option 2: Use the Claude Code skill
+
 The skill triggers automatically when you ask Claude to:
 - "Generate codebase context"
 - "Create a context file for this project"
@@ -55,20 +87,43 @@ Or reference it directly:
 /skill codebase-context
 ```
 
+### Scripts
+
+| Script | Purpose | Output |
+|--------|---------|--------|
+| `generate-all.sh` | Run all generators | All files below |
+| `generate-code-index.sh` | Extract concepts, exports, types, API routes | `code-index.json` |
+| `generate-deps.sh` | Build dependency graph | `deps.mermaid`, `deps.json`, or `deps.dot` |
+
+**Supported languages:**
+- TypeScript / JavaScript (Next.js, Express, Node)
+- Python (FastAPI, Flask)
+- Go (partial)
+
+For best results with TypeScript/JavaScript, install [madge](https://github.com/pahen/madge):
+```bash
+npm install -g madge
+```
+
 ## Generated Files
 
 After running the skill, your project will have:
 
 ```
 .claude/
-├── codebase-context.md           # The context document
-├── codebase-context.snapshot     # Freshness snapshot (hashes + timestamp)
+├── codebase-context.md           # Human-readable context
+├── code-index.json               # Machine-optimized lookups
+├── deps.mermaid                  # Dependency graph (Mermaid)
+├── codebase-context.snapshot     # Freshness snapshot
 └── check-context-freshness.sh    # Freshness check script
 ```
 
 ## Example Output
 
-See [examples/codebase-context.md](examples/codebase-context.md) for a sample generated context file.
+- [examples/codebase-context.md](examples/codebase-context.md) - Human-readable context
+- [examples/code-index.json](examples/code-index.json) - Machine-optimized index
+- [examples/deps.mermaid](examples/deps.mermaid) - Dependency graph (Mermaid)
+- [examples/deps.dot](examples/deps.dot) - Dependency graph (GraphViz DOT)
 
 ## Why Use This?
 
@@ -112,9 +167,28 @@ grepai trace callers myFunction
 
 | Step | Tool | Purpose |
 |------|------|---------|
-| 1 | codebase-context | Understand project structure |
-| 2 | grepai | Find code by semantic meaning |
-| 3 | Glob/Grep | Exact pattern matching |
+| 1 | codebase-context.md | Understand project structure |
+| 2 | code-index.json | Fast lookups (concepts, exports, types) |
+| 3 | deps.mermaid | Trace dependencies |
+| 4 | grepai | Find code by semantic meaning |
+| 5 | Glob/Grep | Exact pattern matching |
+
+### Dependency Graph Tools
+
+For JavaScript/TypeScript projects, you can generate dependency graphs with existing tools:
+
+```bash
+# madge - simple, reliable
+npx madge --json src > .claude/deps.json
+
+# dependency-cruiser - more powerful
+npx depcruise --output-type dot src > .claude/deps.dot
+```
+
+For Python:
+```bash
+pydeps mypackage --no-show --output .claude/deps.svg
+```
 
 ## Contributing
 

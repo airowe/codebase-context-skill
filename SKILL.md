@@ -7,7 +7,7 @@ description: Generates a codebase-context.md file that provides pre-built contex
 
 ## Purpose
 
-Generate context files that help AI agents understand your codebase immediately, without spending tokens on exploration:
+Generate context files that help AI agents understand your codebase without blind exploration:
 
 | File | Purpose | Format |
 |------|---------|--------|
@@ -21,16 +21,16 @@ Run the extraction scripts to generate machine-readable context:
 
 ```bash
 # Generate all context files (code-index.json, deps.mermaid, deps.json)
-.claude/skills/codebase-context/scripts/generate-all.sh .
+~/.claude/skills/codebase-context/scripts/generate-all.sh .
 
 # Or run individually:
-.claude/skills/codebase-context/scripts/generate-code-index.sh .
-.claude/skills/codebase-context/scripts/generate-deps.sh . mermaid
+~/.claude/skills/codebase-context/scripts/generate-code-index.sh .
+~/.claude/skills/codebase-context/scripts/generate-deps.sh . mermaid
 ```
 
 Then use the skill to generate the human-readable context:
 ```
-/skill codebase-context
+/codebase-context
 ```
 
 ## When to Use
@@ -43,12 +43,85 @@ Then use the skill to generate the human-readable context:
 
 ---
 
+## Integration with CLAUDE.md
+
+### Recommended: Progressive Disclosure
+
+Add a **single reference line** in your project's `CLAUDE.md`:
+
+```markdown
+For full project structure and workflows, see `.claude/codebase-context.md`.
+```
+
+This lets agents discover the context file when they need to explore, without forcing it to load on every request.
+
+### Why NOT to use "CRITICAL: Read First" blocks
+
+Earlier versions of this skill recommended adding a mandatory preload block at the top of CLAUDE.md:
+
+```markdown
+## CRITICAL: Read Codebase Context First
+BEFORE using Glob, Grep, or exploring the codebase, you MUST read...
+```
+
+**This approach has problems:**
+
+1. **Token waste on targeted tasks** — A request like "fix this typo in RecipeDetailScreen" doesn't need 400 lines of project structure loaded into context.
+2. **Competes with instruction budget** — LLMs can follow ~150-200 instructions consistently. Every line of context displaces task-specific instructions.
+3. **Staleness risk** — File paths change constantly. Stale paths in mandatory context actively mislead the agent, which is worse than no context.
+4. **Defeats progressive disclosure** — In monorepos, Claude Code already merges `CLAUDE.md` files from root down to the working directory. Package-level files give you free progressive disclosure.
+
+### For Monorepos
+
+Use package-level `CLAUDE.md` files instead of cramming everything into root:
+
+```
+CLAUDE.md                  # Project overview, commands, rules (~50 lines)
+apps/mobile/CLAUDE.md      # Mobile patterns, design system, workflows
+apps/api/CLAUDE.md         # API conventions, DB patterns, auth flow
+```
+
+Each file only loads when working in that directory.
+
+---
+
+## Lessons Learned: Keeping Context Lean
+
+Based on real-world usage, here's what works and what doesn't in context files:
+
+### What to include
+
+| Content | Why |
+|---------|-----|
+| One-line project description | Anchors every agent decision |
+| Directory tree (top 2-3 levels) | Shows structure without file-path brittleness |
+| Domain concepts/vocabulary | Stable across refactors, prevents misunderstandings |
+| Key workflows (1 line each) | Shows how features connect |
+| Patterns and conventions | Prevents style drift |
+| Gotchas | Saves debugging time |
+
+### What to leave out
+
+| Content | Why |
+|---------|-----|
+| Environment variable examples | Sensitive, discoverable from `.env.example` |
+| Code snippets/API usage examples | Go stale fast, agent can read the actual code |
+| Full file listings per screen/feature | Too granular, changes frequently |
+| App Store / deployment details | Rarely relevant to coding tasks |
+| Marketing site info | Not relevant to development |
+| Build/deploy commands beyond basics | Discoverable from `package.json` |
+
+### Target size
+
+Aim for **80-150 lines** in `codebase-context.md`. If it's over 200, you're probably including things that belong in package-level `CLAUDE.md` files or separate docs.
+
+---
+
 ## Staleness Detection
 
 Before reading codebase-context.md, check if it's stale by running:
 
 ```bash
-# Check if context needs regeneration
 .claude/check-context-freshness.sh
 ```
 
@@ -74,22 +147,17 @@ After generating codebase-context.md, create `.claude/check-context-freshness.sh
 SNAPSHOT_FILE=".claude/codebase-context.snapshot"
 CONTEXT_FILE=".claude/codebase-context.md"
 
-# If no context file exists, it's stale
 if [ ! -f "$CONTEXT_FILE" ]; then
     echo "STALE: No context file found"
     exit 1
 fi
 
-# If no snapshot exists, assume stale
 if [ ! -f "$SNAPSHOT_FILE" ]; then
     echo "STALE: No snapshot file found"
     exit 1
 fi
 
-# Get current directory structure hash (top 3 levels, dirs only)
 CURRENT_TREE=$(find . -maxdepth 3 -type d -not -path '*/\.*' -not -path './node_modules*' -not -path './dist*' -not -path './build*' -not -path './.next*' 2>/dev/null | sort | md5sum | cut -d' ' -f1)
-
-# Get stored tree hash
 STORED_TREE=$(grep "^tree:" "$SNAPSHOT_FILE" 2>/dev/null | cut -d' ' -f2)
 
 if [ "$CURRENT_TREE" != "$STORED_TREE" ]; then
@@ -97,7 +165,6 @@ if [ "$CURRENT_TREE" != "$STORED_TREE" ]; then
     exit 1
 fi
 
-# Check key config files
 for CONFIG in package.json tsconfig.json pyproject.toml Cargo.toml go.mod; do
     if [ -f "$CONFIG" ]; then
         CURRENT_HASH=$(md5sum "$CONFIG" 2>/dev/null | cut -d' ' -f1)
@@ -109,7 +176,6 @@ for CONFIG in package.json tsconfig.json pyproject.toml Cargo.toml go.mod; do
     fi
 done
 
-# Check age (warn if older than 7 days)
 GENERATED=$(grep "^generated:" "$SNAPSHOT_FILE" 2>/dev/null | cut -d' ' -f2)
 if [ -n "$GENERATED" ]; then
     NOW=$(date +%s)
@@ -131,17 +197,13 @@ After generating codebase-context.md, create `.claude/codebase-context.snapshot`
 
 ```bash
 #!/bin/bash
-# Generate snapshot for freshness detection
-
 SNAPSHOT_FILE=".claude/codebase-context.snapshot"
 
-# Directory tree hash
 TREE_HASH=$(find . -maxdepth 3 -type d -not -path '*/\.*' -not -path './node_modules*' -not -path './dist*' -not -path './build*' -not -path './.next*' 2>/dev/null | sort | md5sum | cut -d' ' -f1)
 
 echo "tree: $TREE_HASH" > "$SNAPSHOT_FILE"
 echo "generated: $(date +%s)" >> "$SNAPSHOT_FILE"
 
-# Hash key config files
 for CONFIG in package.json tsconfig.json pyproject.toml Cargo.toml go.mod; do
     if [ -f "$CONFIG" ]; then
         HASH=$(md5sum "$CONFIG" | cut -d' ' -f1)
@@ -160,170 +222,61 @@ echo "Snapshot saved to $SNAPSHOT_FILE"
 
 Explore the codebase to understand:
 
-1. **Project type and stack** - Framework, language, package manager
-2. **Directory structure** - Key folders and their purposes
-3. **Key files by feature** - Important files organized by domain
-4. **Patterns & conventions** - Naming, code style, testing approach
+1. **Project type and stack** — Framework, language, package manager
+2. **Directory structure** — Key folders and their purposes (top 2-3 levels)
+3. **Domain concepts** — Business vocabulary and key workflows
+4. **Patterns & conventions** — Naming, code style, state management
 
-### Step 2: Document Key Information
+### Step 2: Write a Lean Context File
 
-Create sections for:
+Create `.claude/codebase-context.md` with these sections (target: 80-150 lines):
 
 ```markdown
 # Codebase Context
 
-> **INSTRUCTION FOR AGENTS:** Read this file FIRST before exploring the codebase.
+> Optional reference for AI agents. Read when you need to understand project structure.
 
 ## Project Overview
-- Name, description, type
-- Tech stack summary
-- Package manager and monorepo status
+- One-line description, type, package manager
+
+## Tech Stack
+- Table of layer → technology
 
 ## Directory Structure
-- Tree view of important directories
-- Purpose of each major folder
-
-## Key Files by Feature
-- Group important files by domain/feature
-- Include file paths and brief descriptions
-
-## Patterns & Conventions
-- Naming conventions (files, functions, types, components)
-- Code style rules
-- Testing approach and location
-- API design patterns
-
-## Tech Stack Table
-| Layer | Technology |
-|-------|------------|
-| Framework | ... |
-| Language | ... |
-| ... | ... |
-
-## Database Schema (if applicable)
-- Key tables and their purposes
-- Important relationships
-
-## Important Rules
-- Critical constraints agents must follow
-- Pre-commit/CI requirements
-
-## Quick Commands
-- Development commands
-- Quality gates
-- Build/deploy commands
-
-## Environment Variables
-- Required env vars (without values)
-
-## Common Gotchas
-- Non-obvious behaviors
-- Platform-specific issues
-- Unusual configurations
+- Tree view, top 2-3 levels with purpose annotations
 
 ## Domain Concepts
-- Key terminology and definitions
-- Business logic concepts
+- Table of term → meaning
 
 ## Key Workflows
-- Important user/data flows
-- Integration patterns
+- One line per workflow showing the flow
+
+## Patterns
+- Bullet list of conventions (styling, naming, auth, etc.)
+
+## Gotchas
+- Non-obvious behaviors that waste debugging time
 ```
+
+**Omit**: env vars, code snippets, deployment details, marketing content, full file listings.
 
 ### Step 3: Save Files
 
-Save to the project:
-1. `.claude/codebase-context.md` - The context document
-2. `.claude/codebase-context.snapshot` - Freshness snapshot
-3. `.claude/check-context-freshness.sh` - Freshness check script (make executable)
+1. `.claude/codebase-context.md` — The context document
+2. `.claude/codebase-context.snapshot` — Freshness snapshot
+3. `.claude/check-context-freshness.sh` — Freshness check script (make executable)
 
 ```bash
 chmod +x .claude/check-context-freshness.sh
 ```
 
-### Step 4: Update CLAUDE.md
+### Step 4: Add Reference to CLAUDE.md
 
-Add this block at the **TOP** of the project's `CLAUDE.md` (before any other instructions):
+Add one line to the project's `CLAUDE.md` (do NOT add a mandatory preload block):
 
 ```markdown
-## CRITICAL: Read Codebase Context First
-
-**BEFORE using Glob, Grep, or exploring the codebase, you MUST:**
-
-1. Read `.claude/codebase-context.md` - contains pre-built project context
-2. Run `.claude/check-context-freshness.sh` - verify context is current
-
-**DO NOT** use file search tools (Glob, Grep, Task with Explore agent) until you have read the context file. The context file contains:
-- Complete directory structure with file purposes
-- Key files organized by feature
-- Patterns, conventions, and code style
-- Database schema and domain concepts
-- Quick commands and common gotchas
-
-If the freshness check returns "STALE", regenerate context before proceeding:
+For full project structure and workflows, see `.claude/codebase-context.md`.
 ```
-/skill codebase-context
-```
-
-This saves tokens and ensures accurate understanding of the codebase.
-```
-
-**Why this instruction works:**
-- Placed at the TOP of CLAUDE.md so it's read first
-- Uses "CRITICAL" and "MUST" for priority
-- Explicitly lists the tools to avoid until context is read
-- Explains the benefit (saves tokens, accurate understanding)
-
----
-
-## Quick Regeneration
-
-When context is stale, regenerate with:
-
-```
-Generate fresh codebase context for this project
-```
-
-Or use the skill directly:
-```
-/skill codebase-context
-```
-
----
-
-## Best Practices
-
-1. **Check freshness first** - Run the check script before trusting the context
-2. **Keep it updated** - Regenerate after major changes
-3. **Be specific** - Include actual file paths, not generic descriptions
-4. **Prioritize** - Put most important info first
-5. **Be concise** - Agents have limited context; don't pad with fluff
-6. **Include gotchas** - Document non-obvious behaviors that waste tokens
-7. **Commit the files** - Version control the context and snapshot
-
-## Example Output Structure
-
-```
-.claude/
-├── codebase-context.md           # Generated context file
-├── codebase-context.snapshot     # Freshness snapshot
-└── check-context-freshness.sh    # Freshness check script
-
-CLAUDE.md                          # References codebase-context.md
-```
-
-## Maintenance
-
-The staleness check will detect when regeneration is needed:
-- Directory structure changes (new folders, reorganization)
-- Config file changes (package.json, tsconfig.json, etc.)
-- Age > 7 days
-
-Manual regeneration triggers:
-- Adding new major features
-- Changing tech stack components
-- Modifying conventions or patterns
-- Noticing agents repeatedly exploring the same areas
 
 ---
 
@@ -349,23 +302,19 @@ After generating codebase-context.md, also create `.claude/code-index.json`:
   "concepts": {
     "authentication": ["src/auth/login.ts:15", "src/middleware/jwt.ts:1"],
     "error handling": ["src/utils/errors.ts:1", "src/api/middleware.ts:42"],
-    "database": ["src/db/client.ts:1", "src/db/queries.ts:1"],
-    "routing": ["src/routes/index.ts:1", "src/app/api/**"]
+    "database": ["src/db/client.ts:1", "src/db/queries.ts:1"]
   },
   "entry_points": {
     "POST /api/login": "src/app/api/auth/login/route.ts:15",
-    "GET /api/users": "src/app/api/users/route.ts:8",
-    "POST /api/tasks": "src/app/api/tasks/route.ts:12"
+    "GET /api/users": "src/app/api/users/route.ts:8"
   },
   "exports": {
     "src/lib/db/client.ts": ["prisma", "PrismaClient"],
-    "src/lib/utils/index.ts": ["cn", "formatDate", "debounce"],
-    "src/components/ui/button.tsx": ["Button", "ButtonProps"]
+    "src/lib/utils/index.ts": ["cn", "formatDate", "debounce"]
   },
   "types": {
     "User": "src/types/user.ts:5",
-    "Task": "src/types/task.ts:3",
-    "ApiResponse": "src/types/api.ts:1"
+    "Task": "src/types/task.ts:3"
   }
 }
 ```
@@ -373,49 +322,15 @@ After generating codebase-context.md, also create `.claude/code-index.json`:
 ### Index Sections
 
 **concepts**: Maps domain concepts to file locations
-- Extract from: function names, comments, file names, folder names
-- Example: If a file is named `auth.ts` or contains `authenticate()`, map "authentication" → that file
-
 **entry_points**: Maps API routes/CLI commands to handlers
-- Extract from: route files, command handlers, exported main functions
-- Format: `METHOD /path` → `file:line`
-
 **exports**: Maps files to their public exports
-- Extract from: `export` statements
-- Helps agents understand module APIs without reading full files
-
 **types**: Maps type/interface names to definitions
-- Extract from: `type`, `interface`, `class` declarations
-- Enables quick type lookups
-
-### How to Generate the Index
-
-When exploring the codebase for context generation, also collect:
-
-1. **Scan for concepts** - Look for files/functions matching common patterns:
-   - `auth`, `login`, `session` → "authentication"
-   - `error`, `exception`, `catch` → "error handling"
-   - `db`, `database`, `query`, `prisma`, `sql` → "database"
-   - `route`, `api`, `endpoint`, `handler` → "routing"
-   - `test`, `spec`, `mock` → "testing"
-
-2. **Extract API routes** - Find route handlers and map method + path → file:line
-
-3. **Extract exports** - Grep for `export` statements and parse names
-
-4. **Extract types** - Grep for `type`, `interface`, `class` declarations
 
 ---
 
 ## Dependency Graph
 
 Generate a lightweight dependency graph to answer "what depends on what?" questions.
-
-### Purpose
-
-- Trace from entry point to implementation in one lookup
-- Understand impact of changes (what will break?)
-- Find related files without grepping imports
 
 ### Generate deps.mermaid
 
@@ -425,57 +340,27 @@ Create `.claude/deps.mermaid` with a Mermaid flowchart:
 graph LR
   subgraph API
     api/users.ts --> db/queries.ts
-    api/tasks.ts --> db/queries.ts
     api/auth.ts --> lib/jwt.ts
   end
 
   subgraph Database
     db/queries.ts --> db/client.ts
-    db/mutations.ts --> db/client.ts
-  end
-
-  subgraph Components
-    components/TaskList --> hooks/useTasks
-    hooks/useTasks --> api/tasks.ts
   end
 ```
 
-### Alternative: deps.dot (GraphViz)
+### How to Generate
 
-For larger codebases, DOT format is more token-efficient:
-
-```dot
-digraph deps {
-  rankdir=LR;
-  "api/users.ts" -> "db/queries.ts"
-  "api/tasks.ts" -> "db/queries.ts"
-  "api/auth.ts" -> "lib/jwt.ts"
-  "db/queries.ts" -> "db/client.ts"
-}
-```
-
-### How to Generate the Graph
-
-**For JavaScript/TypeScript projects**, use existing tools:
+**For JavaScript/TypeScript projects:**
 
 ```bash
-# madge - simple, reliable
 npx madge --json src > .claude/deps.json
 npx madge --dot src > .claude/deps.dot
-
-# dependency-cruiser - more powerful
-npx depcruise --output-type dot src > .claude/deps.dot
-```
-
-**For Python projects:**
-```bash
-pydeps mypackage --no-show --output .claude/deps.svg
 ```
 
 **Manual extraction (any language):**
 - Grep for import statements
 - Build adjacency list: `file → [imported files]`
-- Output as DOT or Mermaid
+- Output as Mermaid or DOT
 
 ### Graph Scope
 
@@ -486,110 +371,61 @@ Keep the graph focused:
 
 ---
 
-## Updated Output Structure
+## Output Structure
 
 After generation, the `.claude/` directory contains:
 
 ```
 .claude/
-├── codebase-context.md           # Human-readable context
+├── codebase-context.md           # Human-readable context (80-150 lines)
 ├── codebase-context.snapshot     # Freshness snapshot
-├── code-index.json               # Machine-optimized lookups (NEW)
-├── deps.mermaid                  # Dependency graph (NEW)
+├── code-index.json               # Machine-optimized lookups
+├── deps.mermaid                  # Dependency graph
 └── check-context-freshness.sh    # Freshness check script
 ```
 
-### Updated CLAUDE.md Instructions
+---
 
-Add to the CRITICAL section:
+## Best Practices
 
-```markdown
-## CRITICAL: Read Codebase Context First
+1. **Progressive disclosure** — Reference context from CLAUDE.md, don't mandate preloading it
+2. **Keep it lean** — Target 80-150 lines; if over 200, split into package-level files
+3. **Concepts over file paths** — Domain vocabulary is stable; file paths change constantly
+4. **Check freshness** — Run the check script before trusting the context
+5. **Monorepo structure** — Use package-level `CLAUDE.md` files for package-specific guidance
+6. **Commit the files** — Version control context, snapshot, and check script
 
-**BEFORE using Glob, Grep, or exploring the codebase, you MUST:**
+## Maintenance
 
-1. Read `.claude/codebase-context.md` - human-readable project context
-2. Read `.claude/code-index.json` - lookup table for concepts, exports, types
-3. Read `.claude/deps.mermaid` - dependency graph for tracing imports
-4. Run `.claude/check-context-freshness.sh` - verify context is current
+The staleness check detects when regeneration is needed:
+- Directory structure changes (new folders, reorganization)
+- Config file changes (package.json, tsconfig.json, etc.)
+- Age > 7 days
 
-**Use the code index for fast lookups:**
-- Need to find where authentication is handled? Check `concepts.authentication`
-- Need to know what a file exports? Check `exports["path/to/file.ts"]`
-- Need to find a type definition? Check `types.TypeName`
-- Need to trace dependencies? Read the deps graph
-
-**DO NOT** use Glob/Grep until you've checked the index first.
-```
+Manual regeneration triggers:
+- Adding new major features
+- Changing tech stack components
+- Modifying conventions or patterns
 
 ---
 
 ## Companion Tools
 
-The codebase-context file provides static, high-level understanding. For deeper dynamic exploration, consider these companion tools:
+### grepai — Semantic Code Search
 
-### grepai - Semantic Code Search
+[grepai](https://github.com/yoanbernabeu/grepai) enables natural language code search using vector embeddings. 100% local (uses Ollama), supports MCP server for Claude Code integration.
 
-[grepai](https://github.com/yoanbernabeu/grepai) enables natural language code search using vector embeddings. Instead of pattern matching, query by meaning.
-
-**When to use:** After reading codebase-context, when you need to find specific code by what it does rather than what it's named.
-
-**Example queries:**
 ```bash
 grepai search "user authentication flow"
-grepai search "database connection handling"
-grepai search "error handling in API routes"
+grepai trace callers myFunction
 ```
 
-**Call graph tracing:**
-```bash
-grepai trace callers myFunction    # Who calls this function?
-grepai trace callees myFunction    # What does this function call?
-```
+### Recommended Workflow
 
-**Setup:**
-```bash
-# Install
-curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh
-
-# Initialize in project
-cd your-project && grepai init
-
-# Start file watcher (keeps index fresh)
-grepai watch
-
-# Search
-grepai search "your query"
-```
-
-**MCP Server for Claude Code:**
-```bash
-grepai mcp-serve  # Enables Claude Code to use semantic search directly
-```
-
-**Key features:**
-- 100% local (uses Ollama - no cloud dependencies)
-- Real-time indexing via file watcher
-- Multi-language support (JS, TS, Python, Go, Rust, etc.)
-- JSON output optimized for AI agents
-
-### Claude Context (Alternative)
-
-[claude-context](https://github.com/zilliztech/claude-context) is another MCP plugin for semantic code search, built by Zilliz (creators of Milvus vector DB).
-
-### How They Complement codebase-context
-
-| Tool | Purpose | When to Use |
-|------|---------|-------------|
-| codebase-context.md | Human-readable overview | Session start, understanding structure |
-| code-index.json | Machine-optimized lookups | Fast concept/export/type lookups |
-| deps.mermaid | Dependency graph | Tracing imports, impact analysis |
-| grepai | Semantic search | Finding code by meaning (requires setup) |
-| Glob/Grep | Pattern matching | Exact text/file pattern matches |
-
-**Recommended workflow:**
-1. Read `codebase-context.md` first (understand the project)
-2. Check `code-index.json` for quick lookups (concepts, exports, types)
-3. Check `deps.mermaid` for dependency questions
-4. Use grepai for semantic queries (if installed)
-5. Fall back to Glob/Grep for exact pattern matches
+| Step | Tool | Purpose |
+|------|------|---------|
+| 1 | codebase-context.md | Understand project structure |
+| 2 | code-index.json | Fast lookups (concepts, exports, types) |
+| 3 | deps.mermaid | Trace dependencies |
+| 4 | grepai | Find code by semantic meaning (if installed) |
+| 5 | Glob/Grep | Exact pattern matching |
